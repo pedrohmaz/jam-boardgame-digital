@@ -1,0 +1,182 @@
+import type { StyleCard, EventCard } from '../types/cards';
+
+// ============================================================
+// Cartas de Estilo - 11 cartas total
+// Obtidas ao cumprir 1º e 3º objetivos (o jogador escolhe 1 de 3)
+// ============================================================
+export const ALL_STYLES: StyleCard[] = [
+  {
+    id: 'estilo_01',
+    name: 'Improvisação',
+    image: '/assets/estilo/cartas de estilo-01.png',
+    description: 'Quando retirar um cubo em uma apresentação, você pode devolvê-lo para o saco e retirar um cubo novamente.',
+    timing: 'during_draw',
+    effectType: 'redraw_once_per_cube',
+  },
+  {
+    id: 'estilo_02',
+    name: 'Flexibilidade',
+    image: '/assets/estilo/cartas de estilo-02.png',
+    description: 'Você pode alocar um dos cubos comprados a qualquer momento da apresentação.',
+    timing: 'during_draw',
+    effectType: 'place_cube_anytime',
+  },
+  {
+    id: 'estilo_03',
+    name: 'Cubo Branco Coringa',
+    image: '/assets/estilo/cartas de estilo-03.png',
+    description: 'Você pode usar um de seus cubos brancos como sendo de qualquer cor em uma apresentação.',
+    timing: 'before_scoring',
+    effectType: 'white_as_wild',
+  },
+  {
+    id: 'estilo_04',
+    name: 'Cachê Extra',
+    image: '/assets/estilo/cartas de estilo-04.png',
+    description: 'Ganhe 2 moedas extras nas apresentações (3 moedas na quinta e sexta rodadas). Ignore o limite de público quando ganhar estas moedas.',
+    timing: 'passive',
+    effectType: 'bonus_coins_presentation',
+  },
+  {
+    id: 'estilo_05',
+    name: 'Inspiração Tática',
+    image: '/assets/estilo/cartas de estilo-05.png',
+    description: 'Você pode gastar sua inspiração para retirar um cubo extra a qualquer momento da apresentação (O limite de uma inspiração ainda vale.)',
+    timing: 'during_draw',
+    effectType: 'inspire_extra_draw_anytime',
+  },
+  {
+    id: 'estilo_06',
+    name: 'Minimalismo',
+    image: '/assets/estilo/cartas de estilo-06.png',
+    description: 'O valor de objetivo das suas apresentações é reduzido em 1.',
+    timing: 'passive',
+    effectType: 'reduce_success_threshold',
+  },
+  {
+    id: 'estilo_07',
+    name: 'Composição Bônus',
+    image: '/assets/estilo/cartas de estilo-07.png',
+    description: 'No final da apresentação, ganhe uma ficha de composição do nível de sua habilidade -1 (min. 2).',
+    timing: 'after_draw',
+    effectType: 'gain_composition_after_gig',
+  },
+  {
+    id: 'estilo_08',
+    name: 'Da Direita para Esquerda',
+    image: '/assets/estilo/cartas de estilo-08.png',
+    description: 'Você pode alocar os cubos da esquerda para a direita em uma de suas cartas de músico (Ganhe todos os pontos de notas com um cubo, normalmente).',
+    timing: 'before_scoring',
+    effectType: 'fill_right_to_left',
+  },
+  {
+    id: 'estilo_09',
+    name: 'Seleção do Saco Principal',
+    image: '/assets/estilo/cartas de estilo-09.png',
+    description: 'No começo de uma apresentação, você pode escolher um cubo do saco principal e colocá-lo no seu.',
+    timing: 'before_scoring',
+    effectType: 'draw_from_main_bag',
+  },
+  {
+    id: 'estilo_10',
+    name: 'Pureza',
+    image: '/assets/estilo/cartas de estilo-10.png',
+    description: 'A primeira vez que retirar um cubo branco em uma apresentação, devolva-o para o saco e compre um cubo novamente.',
+    timing: 'during_draw',
+    effectType: 'first_white_redraw',
+  },
+  {
+    id: 'estilo_11',
+    name: 'Prêmio Cobiçado',
+    image: '/assets/estilo/cartas de estilo-11.png',
+    description: 'Você pode ganhar um prêmio de apresentação que já foi ganho anteriormente.',
+    timing: 'passive',
+    effectType: 'claim_taken_reward',
+  },
+];
+
+// ============================================================
+// Cartas de Evento - 10 cartas total (usadas nas rodadas 2-6 conforme o setup)
+// ============================================================
+export const ALL_EVENTS: EventCard[] = [
+  {
+    id: 'evento_01',
+    name: 'Dia Chuvoso',
+    image: '/assets/evento/Cartas de Evento-01.png',
+    description: 'Ganhe a metade de moedas que ganharia (arredondado para cima) ao usar a ação do parque.',
+    trigger: 'action_phase',
+    effectType: 'park_half_coins',
+  },
+  {
+    id: 'evento_02',
+    name: 'Escolhas Estéticas',
+    image: '/assets/evento/Cartas de Evento-02.png',
+    description: 'Quando este evento entra em jogo, cada jogador pode eliminar um cubo (não branco) de seu saco.',
+    trigger: 'round_start',
+    effectType: 'remove_nonwhite_cube',
+  },
+  {
+    id: 'evento_03',
+    name: 'Cada um na Sua!',
+    image: '/assets/evento/Cartas de Evento-03.png',
+    description: 'Nesta rodada, os jogadores precisam gastar um tempo extra (além de todos os custos normais) para entrar em um espaço com outros jogadores (menos no espaço do parque).',
+    trigger: 'action_phase',
+    effectType: 'extra_time_shared_space',
+  },
+  {
+    id: 'evento_04',
+    name: 'Patrocínio',
+    image: '/assets/evento/Cartas de Evento-04.png',
+    description: 'Quando este evento entra em jogo, cada jogador escolhe uma das opções: Ganhar 5 moedas; Ganhar 1 renome; Ganhar 1 habilidade.',
+    trigger: 'round_start',
+    effectType: 'sponsorship_choice',
+  },
+  {
+    id: 'evento_05',
+    name: 'Workshop',
+    image: '/assets/evento/Cartas de Evento-05.png',
+    description: 'Quando realizarem o bônus do conservatório, os jogadores podem escolher qualquer cubo do saco principal, ao invés do espaço de cubos do conservatório.',
+    trigger: 'action_phase',
+    effectType: 'conservatorio_choose_any_cube',
+  },
+  {
+    id: 'evento_06',
+    name: 'Trabalho no Estúdio',
+    image: '/assets/evento/Cartas de Evento-06.png',
+    description: 'Nesta rodada, os jogadores podem usar o espaço da Gravadora para gravar um disco como se tivessem uma composição de nível igual a sua habilidade, pagando o valor normal e utilizando o bônus, se possível (Apenas uma vez por jogador).',
+    trigger: 'action_phase',
+    effectType: 'gravadora_skill_level_record',
+  },
+  {
+    id: 'evento_07',
+    name: 'Acertando o Aluguel',
+    image: '/assets/evento/Cartas de Evento-07.png',
+    description: 'No final da rodada, todos os jogadores devem pagar moedas igual a metade de seus níveis de renome (arredondado para cima). Se não puderem, os jogadores pagam a mesma quantia em pontos.',
+    trigger: 'round_end',
+    effectType: 'pay_renown_half_coins',
+  },
+  {
+    id: 'evento_08',
+    name: 'Jam Session!',
+    image: '/assets/evento/Cartas de Evento-08.png',
+    description: 'Os jogadores podem trocar um cubo de seus sacos por um cubo de outro jogador (máx: duas vezes).',
+    trigger: 'round_start',
+    effectType: 'swap_cubes_with_player',
+  },
+  {
+    id: 'evento_09',
+    name: 'Semana de Negócios',
+    image: '/assets/evento/Cartas de Evento-09.png',
+    description: 'Enquanto este evento estiver ativo, os jogadores podem pagar uma moeda sempre que quiserem realizar o bônus do espaço em que entraram, mesmo que estejam no sentido contrário ao das setas.',
+    trigger: 'action_phase',
+    effectType: 'buy_bonus_any_direction',
+  },
+  {
+    id: 'evento_10',
+    name: 'Vias Interditadas',
+    image: '/assets/evento/Cartas de Evento-10.png',
+    description: 'Coloque os dados no espaço do Parque. Nesta rodada, o sentido das setas é invertido e todas as regras e efeitos devem ser cumpridos levando isso em consideração.',
+    trigger: 'round_start',
+    effectType: 'invert_arrow_direction',
+  },
+];
