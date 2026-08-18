@@ -43,17 +43,26 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
 
   const isInvertArrows = gameState.currentEvent?.effectType === 'invert_arrow_direction';
   const moveInfo = isDestinationSelected
-    ? GameEngine.calculateMovement(player, selectedLocation!, gameState.players, isInvertArrows, gameState.neutralDie)
+    ? GameEngine.calculateMovement(player, selectedLocation!, gameState.players, isInvertArrows, gameState.neutralDie, gameState.currentEvent)
     : null;
 
   const hasCupons = player.resources.some(r => r.effectType === 'bonus_reverse_direction');
-  const isForward = hasCupons || (moveInfo ? moveInfo.isForward : (isForwardMovementInLojas ?? true));
+  const isEvent09 = gameState.currentEvent?.effectType === 'buy_bonus_any_direction' || gameState.currentEvent?.id === 'evento_09';
+  const [payEvent09Bonus, setPayEvent09Bonus] = useState(false);
+
+  const rawIsForward = hasCupons || (moveInfo ? moveInfo.isForward : (isForwardMovementInLojas ?? true));
+  const isForward = rawIsForward || (isEvent09 && payEvent09Bonus && player.coins >= 1);
 
   const [activeTab, setActiveTab] = useState<'actions' | 'musicians' | 'resources' | 'clubs'>('actions');
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
   const [showChapeuModal, setShowChapeuModal] = useState(false);
   const [showDiscardModal, setShowDiscardModal] = useState<'musicians' | 'resources' | null>(null);
   const [replacingMusicianSlot, setReplacingMusicianSlot] = useState<number | null>(null);
+
+  // Reset payEvent09Bonus when destination or player changes
+  useEffect(() => {
+    setPayEvent09Bonus(false);
+  }, [selectedLocation, player.id]);
 
   // Seleções
   const [radioChoice, setRadioChoice] = useState<'play_disc' | 'publicity'>(player.discs.length > 0 ? 'play_disc' : 'publicity');
@@ -103,7 +112,8 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
     const { newState, success, message } = GameEngine.performRadioAction(
       gameState,
       selectedRadioDiscId || undefined,
-      radioChoice
+      radioChoice,
+      isEvent09 && !rawIsForward && payEvent09Bonus
     );
     if (success) {
       onStateUpdate(newState);
@@ -124,6 +134,7 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
           chosenConservatorioCubeIndex: isForward && !recycleConservatorioCubes ? (isWorkshop ? undefined : chosenConsCubeIndex) : undefined,
           chosenWorkshopColor: isForward && isWorkshop && !recycleConservatorioCubes ? chosenWorkshopColor : undefined,
           recycleConservatorioCubes: isForward ? recycleConservatorioCubes : false,
+          payEvent09BonusCoin: isEvent09 && !rawIsForward && payEvent09Bonus,
         }
       );
       if (success) {
@@ -138,7 +149,8 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
         spendInspirationCompose && player.inspiration >= 1,
         isForward && !recycleConservatorioCubes ? (isWorkshop ? undefined : chosenConsCubeIndex) : undefined,
         isForward && isWorkshop && !recycleConservatorioCubes ? chosenWorkshopColor : undefined,
-        isForward ? recycleConservatorioCubes : false
+        isForward ? recycleConservatorioCubes : false,
+        isEvent09 && !rawIsForward && payEvent09Bonus
       );
       if (success) {
         onStateUpdate(newState);
@@ -152,7 +164,12 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
   // ─── 3: Ruas (Contratar do mercado de 4 slots) ────────────────────────────
   const handleHireMusician = (slotIndex: number, replacedMusicianId?: string) => {
     if (isActionBlocked || hasActedThisTurn || !isDestinationSelected) return;
-    const { newState, success, message } = GameEngine.performRuasHireMusician(gameState, slotIndex, replacedMusicianId);
+    const { newState, success, message } = GameEngine.performRuasHireMusician(
+      gameState,
+      slotIndex,
+      replacedMusicianId,
+      isEvent09 && !rawIsForward && payEvent09Bonus
+    );
     if (success) {
       setReplacingMusicianSlot(null);
       onStateUpdate(newState);
@@ -165,7 +182,11 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
   // ─── 4: Gravadora ─────────────────────────────────────────────────────────
   const handleGravadoraRecord = (compositionId?: string) => {
     if (isActionBlocked || hasActedThisTurn || !isDestinationSelected) return;
-    const { newState, success, message } = GameEngine.performGravadoraRecordDisc(gameState, compositionId);
+    const { newState, success, message } = GameEngine.performGravadoraRecordDisc(
+      gameState,
+      compositionId,
+      isEvent09 && !rawIsForward && payEvent09Bonus
+    );
     if (success) {
       onStateUpdate(newState);
       showFeedback(true, message);
@@ -508,6 +529,42 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
               {locationDef && isForward && ' (com Bônus das Setas)'}
             </div>
 
+            {!rawIsForward && isEvent09 && isDestinationSelected && !hasActedThisTurn && (
+              <div style={{
+                background: payEvent09Bonus ? 'rgba(46, 204, 113, 0.15)' : 'rgba(243, 195, 67, 0.12)',
+                border: `1px solid ${payEvent09Bonus ? '#2ecc71' : 'rgba(243, 195, 67, 0.35)'}`,
+                borderRadius: 8,
+                padding: '8px 12px',
+                marginBottom: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}>
+                <div style={{ fontSize: '0.78rem', color: '#ebdccb' }}>
+                  <strong>💼 Semana de Negócios:</strong> Pague 1 moeda para ativar o Bônus deste local mesmo contra as setas.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPayEvent09Bonus(!payEvent09Bonus)}
+                  disabled={player.coins < 1 && !payEvent09Bonus}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    borderRadius: 6,
+                    background: payEvent09Bonus ? '#2ecc71' : 'rgba(255,255,255,0.08)',
+                    color: payEvent09Bonus ? '#120c06' : '#f0ede8',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    cursor: (player.coins >= 1 || payEvent09Bonus) ? 'pointer' : 'not-allowed',
+                    opacity: (player.coins < 1 && !payEvent09Bonus) ? 0.4 : 1,
+                  }}
+                >
+                  {payEvent09Bonus ? '✓ Bônus Ativado (-1 🪙)' : 'Pagar 1 🪙 pelo Bônus'}
+                </button>
+              </div>
+            )}
+
             {!isDestinationSelected && !isShoppingInLojas && (
               <p style={{ fontSize: '0.78rem', color: '#8a7a6e' }}>
                 Você começou o turno na posição atual. Clique em outro local no tabuleiro para onde deseja ir.
@@ -610,36 +667,73 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
             )}
 
             {/* 2: Gravadora */}
-            {activeLocIndex === 2 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#c9922b', marginBottom: 2 }}>
-                  Custo de gravação: <strong>{isForward ? '3 moedas (desconto de 1 moeda do bônus)' : '4 moedas'}</strong>
-                </div>
-                {player.compositions.length > 0 ? (
-                  player.compositions.map(comp => {
-                    const cost = isForward ? 3 : 4;
-                    const canAfford = player.coins >= cost;
+            {activeLocIndex === 2 && (() => {
+              const isStudioEvent = gameState.currentEvent?.effectType === 'gravadora_skill_level_record' || gameState.currentEvent?.id === 'evento_06';
+              const canUseStudioRecord = isStudioEvent && !player.hasUsedStudioRecordThisRound;
+              const studioCost = isForward ? 3 : 4;
+              const canAffordStudio = player.coins >= studioCost;
 
-                    return (
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#c9922b', marginBottom: 2 }}>
+                    Custo de gravação: <strong>{isForward ? '3 moedas (desconto de 1 moeda do bônus)' : '4 moedas'}</strong>
+                  </div>
+
+                  {canUseStudioRecord && (
+                    <div style={{
+                      background: 'rgba(56,189,248,0.12)',
+                      border: '1px solid rgba(56,189,248,0.35)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      marginBottom: 4,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8' }}>
+                        🎙️ Evento Ativo: Trabalho no Estúdio
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#ebdccb' }}>
+                        Grave 1 disco direto sem usar partitura, com Nível igual à sua Habilidade ({player.skill})!
+                      </div>
                       <ActionButton
-                        key={comp.id}
-                        id={`action-record-${comp.id}`}
-                        icon="💿"
-                        label={`Gravar Partitura Nível ${comp.level} em Disco (${cost} moedas)`}
-                        description={`Custa ${cost} moedas para gravar a partitura em Vinil`}
-                        disabled={hasActedThisTurn || !canAfford}
-                        onClick={() => handleGravadoraRecord(comp.id)}
-                        highlight={!hasActedThisTurn && canAfford}
+                        id="action-record-studio"
+                        icon="🎙️"
+                        label={`Gravar Disco Nível ${player.skill} direto da Habilidade (${studioCost} moedas)`}
+                        description={`Custa ${studioCost} moedas • Nível ${player.skill} (+${player.skill >= 7 ? 3 : player.skill >= 4 ? 2 : 1} VP)`}
+                        disabled={hasActedThisTurn || !canAffordStudio}
+                        onClick={() => handleGravadoraRecord('studio_record')}
+                        highlight={!hasActedThisTurn && canAffordStudio}
                       />
-                    );
-                  })
-                ) : (
-                  <p style={{ fontSize: '0.78rem', color: '#8a7a6e' }}>
-                    Você não possui partituras para gravar. Vá ao Conservatório para compor novas músicas!
-                  </p>
-                )}
-              </div>
-            )}
+                    </div>
+                  )}
+
+                  {player.compositions.length > 0 ? (
+                    player.compositions.map(comp => {
+                      const cost = isForward ? 3 : 4;
+                      const canAfford = player.coins >= cost;
+
+                      return (
+                        <ActionButton
+                          key={comp.id}
+                          id={`action-record-${comp.id}`}
+                          icon="💿"
+                          label={`Gravar Partitura Nível ${comp.level} em Disco (${cost} moedas)`}
+                          description={`Custa ${cost} moedas para gravar a partitura em Vinil`}
+                          disabled={hasActedThisTurn || !canAfford}
+                          onClick={() => handleGravadoraRecord(comp.id)}
+                          highlight={!hasActedThisTurn && canAfford}
+                        />
+                      );
+                    })
+                  ) : !canUseStudioRecord ? (
+                    <p style={{ fontSize: '0.78rem', color: '#8a7a6e' }}>
+                      Você não possui partituras para gravar. Vá ao Conservatório para compor novas músicas!
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })()}
 
             {/* 3: Conservatório */}
             {activeLocIndex === 3 && (
@@ -1126,6 +1220,41 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
                 : '⚠️ Selecione as Lojas no mapa para poder comprar.'}
             </p>
 
+            {!rawIsForward && isEvent09 && isShoppingAtLojas && (
+              <div style={{
+                background: payEvent09Bonus ? 'rgba(46, 204, 113, 0.15)' : 'rgba(243, 195, 67, 0.12)',
+                border: `1px solid ${payEvent09Bonus ? '#2ecc71' : 'rgba(243, 195, 67, 0.35)'}`,
+                borderRadius: 8,
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}>
+                <div style={{ fontSize: '0.78rem', color: '#ebdccb' }}>
+                  <strong>💼 Semana de Negócios:</strong> Pague 1 moeda para ativar o Bônus das Lojas mesmo contra as setas.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPayEvent09Bonus(!payEvent09Bonus)}
+                  disabled={player.coins < 1 && !payEvent09Bonus}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    borderRadius: 6,
+                    background: payEvent09Bonus ? '#2ecc71' : 'rgba(255,255,255,0.08)',
+                    color: payEvent09Bonus ? '#120c06' : '#f0ede8',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    cursor: (player.coins >= 1 || payEvent09Bonus) ? 'pointer' : 'not-allowed',
+                    opacity: (player.coins < 1 && !payEvent09Bonus) ? 0.4 : 1,
+                  }}
+                >
+                  {payEvent09Bonus ? '✓ Bônus Ativado (-1 🪙)' : 'Pagar 1 🪙 pelo Bônus'}
+                </button>
+              </div>
+            )}
+
             {/* Seção de Bônus de Movimento das Lojas (Vender Disco ou Desconto) */}
             {isForward && isShoppingAtLojas && (
               <div style={{
@@ -1163,7 +1292,11 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
                           className="btn-primary"
                           style={{ flex: 1, minWidth: 140, padding: '6px 10px', fontSize: 11 }}
                           onClick={() => {
-                            const { newState, success, message } = GameEngine.setLojasBonusChoice(gameState, 'discount');
+                            const { newState, success, message } = GameEngine.setLojasBonusChoice(
+                              gameState,
+                              'discount',
+                              isEvent09 && !rawIsForward && payEvent09Bonus
+                            );
                             if (success) {
                               onStateUpdate(newState);
                               showFeedback(true, message);
@@ -1178,7 +1311,11 @@ export default function ActionPanel({ gameState, onStateUpdate, isActionBlocked 
                           className="btn-secondary"
                           style={{ flex: 1, minWidth: 140, padding: '6px 10px', fontSize: 11, borderColor: '#f1c40f', color: '#f1c40f' }}
                           onClick={() => {
-                            const { newState, success, message } = GameEngine.setLojasBonusChoice(gameState, 'sell_disc');
+                            const { newState, success, message } = GameEngine.setLojasBonusChoice(
+                              gameState,
+                              'sell_disc',
+                              isEvent09 && !rawIsForward && payEvent09Bonus
+                            );
                             if (success) {
                               onStateUpdate(newState);
                               showFeedback(true, message);

@@ -121,7 +121,8 @@ export function createInitialState(options: SetupOptions): GameState {
 
   const shuffledObjectives = shuffle(ALL_OBJECTIVES);
   const availableStyles = shuffle(ALL_STYLES);
-  const shuffledEvents = shuffle(ALL_EVENTS);
+  const eligibleEvents = ALL_EVENTS.filter(e => e.id !== 'evento_08');
+  const shuffledEvents = shuffle(eligibleEvents);
 
   const eventsByRound: Record<number, string> = {};
   for (let r = 2; r <= 6; r++) {
@@ -341,7 +342,8 @@ export function calculateMovement(
   targetPos: number,
   allPlayers: PlayerState[],
   isReverseArrows = false,
-  neutralDie?: NeutralDieState | null
+  neutralDie?: NeutralDieState | null,
+  currentEvent?: import('../types/cards').EventCard | null
 ): MovementCostInfo {
   const currentPos = player.boardPosition;
 
@@ -388,6 +390,14 @@ export function calculateMovement(
     p => p.id !== player.id && p.boardPosition === targetPos && p.chosenClub === null && p.boardPosition >= 0
   );
   const hasNeutralDieAtTarget = !!(neutralDie && neutralDie.position === targetPos);
+  const isOccupiedByOthers = otherPlayersAtTarget.length > 0 || hasNeutralDieAtTarget;
+
+  // Evento 03: Cada um na Sua! (extra_time_shared_space)
+  // Gastar um tempo extra para entrar em espaço com outros jogadores (exceto Parque)
+  const isEvent03ExtraTime = currentEvent?.effectType === 'extra_time_shared_space' || currentEvent?.id === 'evento_03';
+  if (isEvent03ExtraTime && targetPos !== 6 && isOccupiedByOthers) {
+    timeCost += 1;
+  }
 
   const hasEmpresario = player.resources.some(r => r.effectType === 'no_entry_fee');
   const visitingFee = (targetPos !== 6 && !hasEmpresario)
@@ -399,7 +409,7 @@ export function calculateMovement(
   const isReachable = hasEnoughTime && hasEnoughCoins;
 
   let reason: string | undefined;
-  if (!hasEnoughTime) reason = `Tempo insuficiente (precisa de ${timeCost} tempo, tem ${player.timeMarker}).`;
+  if (!hasEnoughTime) reason = `Tempo insuficiente (precisa de ${timeCost} tempo${isEvent03ExtraTime && targetPos !== 6 && isOccupiedByOthers ? ' [inclui +1 tempo extra do evento Cada um na Sua!]' : ''}, tem ${player.timeMarker}).`;
   else if (!hasEnoughCoins) reason = `Moedas insuficientes para pagar a taxa de visitação (${visitingFee} moeda(s) necessárias, tem ${player.coins}).`;
 
   return {
@@ -464,7 +474,7 @@ export function selectTargetLocation(
 
   const player = state.players[state.currentPlayerIndex];
   const isInvertArrows = state.currentEvent?.effectType === 'invert_arrow_direction';
-  const moveInfo = calculateMovement(player, targetPosition, state.players, isInvertArrows, state.neutralDie);
+  const moveInfo = calculateMovement(player, targetPosition, state.players, isInvertArrows, state.neutralDie, state.currentEvent);
 
   if (!moveInfo.isReachable) return state;
 
@@ -487,7 +497,7 @@ function applyMovement(state: GameState, targetPos: number): { state: GameState;
   }
 
   const isInvertArrows = state.currentEvent?.effectType === 'invert_arrow_direction';
-  const moveInfo = calculateMovement(player, targetPos, state.players, isInvertArrows, state.neutralDie);
+  const moveInfo = calculateMovement(player, targetPos, state.players, isInvertArrows, state.neutralDie, state.currentEvent);
   const canAffordAllFees = player.coins >= moveInfo.visitingFee;
 
   // Checa se há algum jogador no destino com a Bicicleta (recurso 14) que ainda não a utilizou nesta rodada
@@ -582,7 +592,8 @@ function applyMovement(state: GameState, targetPos: number): { state: GameState;
 export function performRadioAction(
   state: GameState,
   chosenDiscId?: string,
-  chosenOption?: 'play_disc' | 'publicity'
+  chosenOption?: 'play_disc' | 'publicity',
+  payEvent09BonusCoin?: boolean
 ): { newState: GameState; success: boolean; message: string } {
   if (state.turnActionState.hasActedThisTurn) {
     return { newState: state, success: false, message: 'Você já realizou sua ação neste turno.' };
@@ -596,8 +607,11 @@ export function performRadioAction(
     return { newState: state, success: false, message: 'Selecione a Rádio primeiro.' };
   }
 
-  const { state: movedState, isForward } = applyMovement(state, 1);
+  const { state: movedState, isForward: rawIsForward } = applyMovement(state, 1);
   const player = movedState.players[movedState.currentPlayerIndex];
+  const isEvent09 = movedState.currentEvent?.effectType === 'buy_bonus_any_direction' || movedState.currentEvent?.id === 'evento_09';
+  const hasPaidBonus = !rawIsForward && isEvent09 && !!payEvent09BonusCoin && player.coins >= 1;
+  const isForward = rawIsForward || hasPaidBonus;
 
   let willPlayDisc = false;
   let willGainPublicity = false;
@@ -643,9 +657,14 @@ export function performRadioAction(
     logText += (logText.length > 0 ? ' E ' : '') + 'ganhou a Ficha de Divulgação (+30 público no próximo show)';
   }
 
+  if (hasPaidBonus) {
+    logText += ' [Semana de Negócios: pagou 1 moeda para ativar o bônus]';
+  }
+
   const updatedPlayers = movedState.players.map((p, i) =>
     i === movedState.currentPlayerIndex ? {
       ...p,
+      coins: p.coins - (hasPaidBonus ? 1 : 0),
       renown: newRenown,
       discs: updatedDiscs,
       hasPublicityToken: willGainPublicity ? true : p.hasPublicityToken,
@@ -684,6 +703,7 @@ export function performConservatorioGainSkill(
     skillUpSpendInspiration?: boolean;
     skillUpChosenColor?: NoteColor;
     recycleConservatorioCubes?: boolean;
+    payEvent09BonusCoin?: boolean;
   } | number,
   legacyChosenMainBagColor?: NoteColor
 ): { newState: GameState; success: boolean; message: string } {
@@ -705,10 +725,14 @@ export function performConservatorioGainSkill(
     skillUpSpendInspiration: false,
     skillUpChosenColor: undefined,
     recycleConservatorioCubes: false,
+    payEvent09BonusCoin: false,
   };
 
-  const { state: movedState, isForward } = applyMovement(state, 3);
+  const { state: movedState, isForward: rawIsForward } = applyMovement(state, 3);
   const player = movedState.players[movedState.currentPlayerIndex];
+  const isEvent09 = movedState.currentEvent?.effectType === 'buy_bonus_any_direction' || movedState.currentEvent?.id === 'evento_09';
+  const hasPaidBonus = !rawIsForward && isEvent09 && !!opts.payEvent09BonusCoin && player.coins >= 1;
+  const isForward = rawIsForward || hasPaidBonus;
 
   const oldSkill = SKILL_STEPS_VALUES[player.skillStepIndex ?? 0];
   const nextStepIndex = Math.min(SKILL_STEPS_VALUES.length - 1, (player.skillStepIndex ?? 0) + 1);
@@ -785,12 +809,17 @@ export function performConservatorioGainSkill(
     }
   }
 
+  if (hasPaidBonus) {
+    bonusCustomText += ' [Semana de Negócios: pagou 1 moeda para ativar o bônus]';
+  }
+
   const gainedCubes: NoteColor[] = [];
   if (bonusCube) gainedCubes.push(bonusCube);
 
   const updatedPlayers = movedState.players.map((p, i) =>
     i === movedState.currentPlayerIndex ? {
       ...p,
+      coins: p.coins - (hasPaidBonus ? 1 : 0),
       skillStepIndex: nextStepIndex,
       skill: newSkill,
       bag: gainedCubes.length > 0 ? [...p.bag, ...gainedCubes] : p.bag,
@@ -829,7 +858,8 @@ export function performConservatorioCompose(
   spendInspiration: boolean,
   chosenConservatorioCubeIndex?: number,
   chosenMainBagColor?: NoteColor,
-  recycleConservatorioCubes?: boolean
+  recycleConservatorioCubes?: boolean,
+  payEvent09BonusCoin?: boolean
 ): { newState: GameState; success: boolean; message: string } {
   if (state.turnActionState.hasActedThisTurn) {
     return { newState: state, success: false, message: 'Você já realizou sua ação neste turno.' };
@@ -847,8 +877,11 @@ export function performConservatorioCompose(
     return { newState: state, success: false, message: 'Fichas de Inspiração insuficientes.' };
   }
 
-  const { state: movedState, isForward } = applyMovement(state, 3);
+  const { state: movedState, isForward: rawIsForward } = applyMovement(state, 3);
   const player = movedState.players[movedState.currentPlayerIndex];
+  const isEvent09 = movedState.currentEvent?.effectType === 'buy_bonus_any_direction' || movedState.currentEvent?.id === 'evento_09';
+  const hasPaidBonus = !rawIsForward && isEvent09 && !!payEvent09BonusCoin && player.coins >= 1;
+  const isForward = rawIsForward || hasPaidBonus;
 
   const hasCadernoComposicao = player.resources.some(r => r.id === 'recurso_03' || r.effectType === 'composition_bonus_level');
   const cadernoBonus = hasCadernoComposicao ? 1 : 0;
@@ -909,9 +942,14 @@ export function performConservatorioCompose(
     }
   }
 
+  if (hasPaidBonus) {
+    bonusCustomText += ' [Semana de Negócios: pagou 1 moeda para ativar o bônus]';
+  }
+
   const updatedPlayers = movedState.players.map((p, i) =>
     i === movedState.currentPlayerIndex ? {
       ...p,
+      coins: p.coins - (hasPaidBonus ? 1 : 0),
       inspiration: p.inspiration - (bonusLevel > 0 ? 1 : 0),
       compositions: [...p.compositions, newComp],
       bag: cubeGained ? [...p.bag, cubeGained] : p.bag,
@@ -952,7 +990,8 @@ export function performConservatorioCompose(
 export function performRuasHireMusician(
   state: GameState,
   slotIndex: number,
-  replacedMusicianId?: string
+  replacedMusicianId?: string,
+  payEvent09BonusCoin?: boolean
 ): { newState: GameState; success: boolean; message: string } {
   if (state.turnActionState.hasActedThisTurn) {
     return { newState: state, success: false, message: 'Você já realizou sua ação neste turno.' };
@@ -971,10 +1010,13 @@ export function performRuasHireMusician(
     return { newState: state, success: false, message: 'Slot vazio (músico já contratado nesta rodada).' };
   }
 
-  const { state: movedState, isForward } = applyMovement(state, 5);
+  const { state: movedState, isForward: rawIsForward } = applyMovement(state, 5);
   const player = movedState.players[movedState.currentPlayerIndex];
+  const isEvent09 = movedState.currentEvent?.effectType === 'buy_bonus_any_direction' || movedState.currentEvent?.id === 'evento_09';
+  const hasPaidBonus = !rawIsForward && isEvent09 && !!payEvent09BonusCoin && player.coins >= 1;
+  const isForward = rawIsForward || hasPaidBonus;
 
-  const actualCost = musician.cost;
+  const actualCost = musician.cost + (hasPaidBonus ? 1 : 0);
 
   if (player.coins < actualCost) {
     return { newState: state, success: false, message: `Moedas insuficientes (custa ${actualCost} moedas).` };
@@ -991,12 +1033,15 @@ export function performRuasHireMusician(
 
   const newMusicianEntry = { ...musician, filledNotes: [] as (NoteColor | null)[] };
   
-  let playerAfterInspiration = player;
+  let playerAfterInspiration = { ...player, coins: player.coins - actualCost };
   let bonusText = '';
   if (isForward) {
-    const { updatedPlayer: pWithInsp, logMessage: inspLog } = applyInspirationGain(player, 1);
+    const { updatedPlayer: pWithInsp, logMessage: inspLog } = applyInspirationGain(playerAfterInspiration, 1);
     playerAfterInspiration = pWithInsp;
     bonusText = ` [Bônus das Ruas: ${inspLog}]`;
+    if (hasPaidBonus) {
+      bonusText += ' [Semana de Negócios: pagou 1 moeda para ativar o bônus]';
+    }
   }
 
   let updatedMusicians = [...playerAfterInspiration.musicians];
@@ -1018,7 +1063,6 @@ export function performRuasHireMusician(
   const updatedPlayers = movedState.players.map((p, i) =>
     i === movedState.currentPlayerIndex ? {
       ...playerAfterInspiration,
-      coins: playerAfterInspiration.coins - actualCost,
       musicians: updatedMusicians,
     } : p
   );
@@ -1054,7 +1098,8 @@ export function performRuasHireMusician(
  */
 export function performGravadoraRecordDisc(
   state: GameState,
-  compositionId?: string
+  compositionId?: string,
+  payEvent09BonusCoin?: boolean
 ): { newState: GameState; success: boolean; message: string } {
   if (state.turnActionState.hasActedThisTurn) {
     return { newState: state, success: false, message: 'Você já realizou sua ação neste turno.' };
@@ -1069,29 +1114,55 @@ export function performGravadoraRecordDisc(
   }
 
   const currentPlayer = state.players[state.currentPlayerIndex];
-  if (currentPlayer.compositions.length === 0) {
+  const isStudioEvent = state.currentEvent?.effectType === 'gravadora_skill_level_record' || state.currentEvent?.id === 'evento_06';
+  const isStudioRecordAction = compositionId === 'studio_record' && isStudioEvent;
+
+  if (isStudioRecordAction && currentPlayer.hasUsedStudioRecordThisRound) {
+    return { newState: state, success: false, message: 'Você já utilizou o Trabalho no Estúdio nesta rodada (limite de 1 vez por rodada).' };
+  }
+
+  if (!isStudioRecordAction && currentPlayer.compositions.length === 0) {
     return { newState: state, success: false, message: 'Você não tem partituras para gravar. Vá ao Conservatório compor uma música primeiro.' };
   }
 
   const isInvertArrows = state.currentEvent?.effectType === 'invert_arrow_direction';
-  const moveInfo = calculateMovement(currentPlayer, 2, state.players, isInvertArrows, state.neutralDie);
-  const recordingCost = moveInfo.isForward ? 3 : 4;
+  const moveInfo = calculateMovement(currentPlayer, 2, state.players, isInvertArrows, state.neutralDie, state.currentEvent);
 
-  if (currentPlayer.coins < recordingCost + moveInfo.visitingFee) {
+  const { state: movedState, isForward: rawIsForward } = applyMovement(state, 2);
+  const player = movedState.players[movedState.currentPlayerIndex];
+  const isEvent09 = movedState.currentEvent?.effectType === 'buy_bonus_any_direction' || movedState.currentEvent?.id === 'evento_09';
+  const hasPaidBonus = !rawIsForward && isEvent09 && !!payEvent09BonusCoin && player.coins >= 1;
+  const isForward = rawIsForward || hasPaidBonus;
+
+  const recordingCost = (isForward ? 3 : 4) + (hasPaidBonus ? 1 : 0);
+
+  if (player.coins < recordingCost + moveInfo.visitingFee) {
     return { newState: state, success: false, message: `Moedas insuficientes. Gravar o disco custa ${recordingCost} moedas${moveInfo.visitingFee > 0 ? ` + ${moveInfo.visitingFee} de taxa` : ''}.` };
   }
 
-  const { state: movedState, isForward } = applyMovement(state, 2);
-  const player = movedState.players[movedState.currentPlayerIndex];
+  let newDisc: CompositionToken;
+  let updatedCompositions = player.compositions;
+  let instantVP = 1;
+  let studioLog = '';
 
-  const compToRecord = compositionId
-    ? player.compositions.find(c => c.id === compositionId) || player.compositions[0]
-    : player.compositions[0];
+  if (isStudioRecordAction) {
+    const discLevel = Math.max(1, player.skill);
+    newDisc = {
+      id: `disc_studio_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      level: discLevel,
+      isRecorded: true,
+    };
+    instantVP = discLevel >= 7 ? 3 : discLevel >= 4 ? 2 : 1;
+    studioLog = ` [Trabalho no Estúdio: Nível ${discLevel} baseado na Habilidade]`;
+  } else {
+    const compToRecord = compositionId
+      ? player.compositions.find(c => c.id === compositionId) || player.compositions[0]
+      : player.compositions[0];
 
-  const updatedCompositions = player.compositions.filter(c => c.id !== compToRecord.id);
-  const newDisc = { ...compToRecord, isRecorded: true };
-
-  const instantVP = compToRecord.level >= 7 ? 3 : compToRecord.level >= 4 ? 2 : 1;
+    updatedCompositions = player.compositions.filter(c => c.id !== compToRecord.id);
+    newDisc = { ...compToRecord, isRecorded: true };
+    instantVP = compToRecord.level >= 7 ? 3 : compToRecord.level >= 4 ? 2 : 1;
+  }
 
   const updatedPlayers = movedState.players.map((p, i) =>
     i === movedState.currentPlayerIndex ? {
@@ -1101,10 +1172,14 @@ export function performGravadoraRecordDisc(
       discs: [...p.discs, newDisc],
       score: p.score + instantVP,
       totalDiscsRecorded: (p.totalDiscsRecorded ?? 0) + 1,
+      hasUsedStudioRecordThisRound: isStudioRecordAction ? true : p.hasUsedStudioRecordThisRound,
     } : p
   );
 
-  const discountMsg = isForward ? ' (com 1 moeda de desconto do bônus)' : '';
+  let discountMsg = isForward ? ' (com 1 moeda de desconto do bônus)' : '';
+  if (hasPaidBonus) {
+    discountMsg += ' [Semana de Negócios: pagou 1 moeda para ativar o bônus]';
+  }
 
   const { neutralDie: updatedNeutralDie, logMessage: neutralDieLog } = maybeTriggerNeutralDieReroll(movedState, 2);
 
@@ -1119,12 +1194,67 @@ export function performGravadoraRecordDisc(
     },
     log: [
       ...movedState.log,
-      `${player.name} gravou a Partitura Nível ${compToRecord.level} em Disco de Vinil por ${recordingCost} moedas na Gravadora (+${instantVP} Pontos de Vitória)${discountMsg}.`,
+      `${player.name} gravou Disco de Vinil Nível ${newDisc.level} por ${recordingCost} moedas na Gravadora (+${instantVP} Pontos de Vitória)${discountMsg}${studioLog}.`,
       ...(neutralDieLog ? [neutralDieLog] : []),
     ],
   };
 
-  return { newState: checkPlayerObjectives(newState), success: true, message: `Disco Nível ${compToRecord.level} gravado por ${recordingCost} moedas (+${instantVP} Pontos de Vitória)!` };
+  return { newState: checkPlayerObjectives(newState), success: true, message: `Disco Nível ${newDisc.level} gravado por ${recordingCost} moedas (+${instantVP} Pontos de Vitória)!` };
+}
+
+/**
+ * 5: LOJAS — Define a escolha explícita do bônus de movimento ('discount' ou 'sell_disc').
+ */
+export function setLojasBonusChoice(
+  state: GameState,
+  choice: 'discount' | 'sell_disc',
+  payEvent09BonusCoin?: boolean
+): { newState: GameState; success: boolean; message: string } {
+  const currentPlayer = state.players[state.currentPlayerIndex];
+  const isAlreadyAtLojas = currentPlayer.boardPosition === 4;
+  const isSelectedLojas = state.turnActionState.selectedLocation === 4;
+
+  if (!isAlreadyAtLojas && !isSelectedLojas) {
+    return { newState: state, success: false, message: 'Selecione as Lojas primeiro.' };
+  }
+
+  const { state: movedState, isForward: rawIsForward } = state.turnActionState.isShoppingInLojas
+    ? { state, isForward: state.turnActionState.isForwardMovementInLojas ?? false }
+    : applyMovement(state, 4);
+
+  const isEvent09 = movedState.currentEvent?.effectType === 'buy_bonus_any_direction' || movedState.currentEvent?.id === 'evento_09';
+  const player = movedState.players[movedState.currentPlayerIndex];
+  const hasPaidBonus = !rawIsForward && isEvent09 && !!payEvent09BonusCoin && player.coins >= 1;
+  const isForward = rawIsForward || hasPaidBonus;
+
+  if (!isForward) {
+    return { newState: state, success: false, message: 'Bônus indisponível para movimento contra as setas.' };
+  }
+
+  const updatedPlayers = hasPaidBonus
+    ? movedState.players.map((p, i) => i === movedState.currentPlayerIndex ? { ...p, coins: p.coins - 1 } : p)
+    : movedState.players;
+
+  const event09Log = hasPaidBonus ? ' [Semana de Negócios: pagou 1 moeda para ativar o bônus de movimento]' : '';
+
+  const newState: GameState = {
+    ...movedState,
+    players: updatedPlayers,
+    turnActionState: {
+      ...movedState.turnActionState,
+      selectedLocation: 4,
+      isShoppingInLojas: true,
+      isForwardMovementInLojas: true,
+      lojasBonusChoice: choice,
+      hasActedThisTurn: false,
+    },
+    log: [
+      ...movedState.log,
+      `${currentPlayer.name} escolheu ${choice === 'discount' ? 'Desconto de 1 Moeda' : 'Vender Disco'} como Bônus das Lojas${event09Log}.`,
+    ],
+  };
+
+  return { newState: checkPlayerObjectives(newState), success: true, message: `Bônus definido!` };
 }
 
 /**
@@ -1468,52 +1598,6 @@ export function performLojasSellDisc(
 }
 
 /**
- * 5: LOJAS — Define a escolha explícita do bônus de movimento ('discount' ou 'sell_disc').
- */
-export function setLojasBonusChoice(
-  state: GameState,
-  choice: 'discount' | 'sell_disc'
-): { newState: GameState; success: boolean; message: string } {
-  const currentPlayer = state.players[state.currentPlayerIndex];
-  const isAlreadyAtLojas = currentPlayer.boardPosition === 4;
-  const isSelectedLojas = state.turnActionState.selectedLocation === 4;
-
-  if (!isAlreadyAtLojas && !isSelectedLojas) {
-    return { newState: state, success: false, message: 'Selecione as Lojas primeiro.' };
-  }
-
-  const { state: movedState, isForward } = state.turnActionState.isShoppingInLojas
-    ? { state, isForward: state.turnActionState.isForwardMovementInLojas ?? false }
-    : applyMovement(state, 4);
-
-  if (!isForward) {
-    return { newState: state, success: false, message: 'Bônus indisponível para movimento contra as setas.' };
-  }
-
-  const newState: GameState = {
-    ...movedState,
-    turnActionState: {
-      ...movedState.turnActionState,
-      selectedLocation: 4,
-      isShoppingInLojas: true,
-      isForwardMovementInLojas: true,
-      lojasBonusChoice: choice,
-      hasActedThisTurn: false,
-    },
-    log: [
-      ...movedState.log,
-      `${currentPlayer.name} escolheu ${choice === 'discount' ? 'Desconto de 1 Moeda' : 'Vender Disco'} como Bônus das Lojas.`,
-    ],
-  };
-
-  return {
-    newState,
-    success: true,
-    message: `Bônus selecionado: ${choice === 'discount' ? 'Desconto de 1 Moeda em compras' : 'Vender Disco'}.`,
-  };
-}
-
-/**
  * 5: LOJAS — Efeito Imediato do Chapéu Estiloso (recurso_11):
  * Reserva 1 estilo virado para baixo OU substitui 1 estilo ativo se já possuir 2.
  */
@@ -1815,7 +1899,6 @@ export function performParqueAction(state: GameState): { newState: GameState; su
   );
   const hasNeutralDieInPark = !!(movedState.neutralDie && movedState.neutralDie.position === 6);
   const isAloneInPark = otherPlayersInPark.length === 0 && !hasNeutralDieInPark;
-
   const baseCoins = player.renown;
   const bonusCoins = isAloneInPark ? 2 : 0;
   const totalCoinsGained = baseCoins + bonusCoins;
@@ -1855,6 +1938,50 @@ export function performParqueAction(state: GameState): { newState: GameState; su
 }
 
 // ─── IR PARA CLUBE DE JAZZ (ENCERRA O DIA) ──────────────────────────────────
+
+export function getNightPresentationOrder(players: PlayerState[]): string[] {
+  const clubOrderMap: Record<ClubId, number> = {
+    mosca_frita: 0,
+    toca_do_gargalo: 1,
+    broccolis: 2,
+    o_flamingo: 3,
+    blue_haven: 4,
+    graham_bell_hall: 5,
+  };
+
+  const playersWithShows = players.filter(p => p.chosenClub !== null);
+
+  const sorted = [...playersWithShows].sort((a, b) => {
+    const clubIdxA = a.chosenClub ? (clubOrderMap[a.chosenClub] ?? 999) : 999;
+    const clubIdxB = b.chosenClub ? (clubOrderMap[b.chosenClub] ?? 999) : 999;
+
+    if (clubIdxA !== clubIdxB) {
+      return clubIdxA - clubIdxB;
+    }
+
+    // Desempate no mesmo clube: quem chegou/escolheu primeiro
+    const orderA = a.chosenClubOrder ?? 999;
+    const orderB = b.chosenClubOrder ?? 999;
+    return orderA - orderB;
+  });
+
+  return sorted.map(p => p.id);
+}
+
+export function getNextClubSelectionPlayerIndex(state: GameState): number {
+  const numPlayers = state.players.length;
+  const startingPlayerIndex = (state.round - 1) % numPlayers;
+
+  // Percorre na ordem da rodada atual
+  for (let step = 0; step < numPlayers; step++) {
+    const pIdx = (startingPlayerIndex + step) % numPlayers;
+    if (state.players[pIdx].chosenClub === null) {
+      return pIdx;
+    }
+  }
+
+  return -1;
+}
 
 export function goToClub(
   state: GameState,
@@ -1900,11 +2027,14 @@ export function goToClub(
   const isChoosingClubInsteadOfAction = state.phase === 'day' && player.timeMarker >= 1 && player.boardPosition !== 0;
   const bonusInspiration = isChoosingClubInsteadOfAction ? 1 : 0;
 
+  const nextClubOrder = (state.clubSelectionCounter || 0) + 1;
+
   const updatedPlayers = state.players.map((p, i) =>
     i === state.currentPlayerIndex ? {
       ...p,
       hasFinishedDay: true,
       chosenClub: clubId,
+      chosenClubOrder: nextClubOrder,
       boardPosition: -1, // Marcador removido dos espaços da cidade e alocado no clube
       inspiration: Math.min(3, p.inspiration + bonusInspiration),
     } : p
@@ -1914,6 +2044,7 @@ export function goToClub(
 
   const newState: GameState = {
     ...state,
+    clubSelectionCounter: nextClubOrder,
     players: updatedPlayers,
     turnActionState: {
       ...state.turnActionState,
@@ -1944,25 +2075,23 @@ export function drawFromBag(bag: NoteColor[], count: number): NoteColor[] {
   return drawn;
 }
 
-export interface NightGigOptions {
-  pointsGained?: number;
-  coinsGained?: number;
-  audience?: number;
-  success?: boolean;
-  extraDrawInspirationUsed?: boolean;
-  eliminatedCube?: NoteColor | null;
-  chosenMainBagCube?: NoteColor | null;
-}
-
-export function performNightGig(
+export function performNightPresentation(
   state: GameState,
   musicianAssignments: Record<string, NoteColor[]>,
-  options?: NightGigOptions
+  options?: {
+    pointsGained?: number;
+    coinsGained?: number;
+    audience?: number;
+    success?: boolean;
+    extraDrawInspirationUsed?: boolean;
+    eliminatedCube?: NoteColor | null;
+    chosenMainBagCube?: NoteColor | null;
+  }
 ): { newState: GameState; pointsGained: number; coinsGained: number; audience: number; success: boolean } {
   const player = state.players[state.currentPlayerIndex];
-  const club = CLUBS.find(c => c.id === player.chosenClub) || CLUBS[0];
+  const club = player.chosenClub ? CLUBS.find(c => c.id === player.chosenClub) || CLUBS[0] : CLUBS[0];
 
-  const hasWhiteAsWild = player.styles.some(s => s.effectType === 'white_as_wild');
+  const hasWhiteAsWild = player.styles.some(s => s.effectType === 'white_as_wild' || s.id === 'estilo_03');
 
   let totalPoints = 0;
 
@@ -2078,14 +2207,15 @@ export function performNightGig(
     } : p
   );
 
+  const presentationOrder = state.nightPresentationOrder || getNightPresentationOrder(updatedPlayers);
   const nextNightIndex = state.nightPresentationPlayerIndex + 1;
-  const playersWithShows = updatedPlayers.filter(p => p.chosenClub !== null);
-  const allShowsCompleted = nextNightIndex >= playersWithShows.length;
+  const allShowsCompleted = nextNightIndex >= presentationOrder.length;
 
   let newState: GameState = {
     ...state,
     players: updatedPlayers,
     mainBag: updatedMainBag,
+    nightPresentationOrder: presentationOrder,
     nightPresentationPlayerIndex: nextNightIndex,
     log: [
       ...state.log,
@@ -2096,10 +2226,12 @@ export function performNightGig(
   if (allShowsCompleted) {
     newState = startNewRound(newState);
   } else {
-    const nextShowPlayer = playersWithShows[nextNightIndex];
-    if (nextShowPlayer) {
-      const nextShowPlayerIdx = newState.players.findIndex(p => p.id === nextShowPlayer.id);
-      newState.currentPlayerIndex = nextShowPlayerIdx;
+    const nextPlayerId = presentationOrder[nextNightIndex];
+    if (nextPlayerId) {
+      const nextShowPlayerIdx = newState.players.findIndex(p => p.id === nextPlayerId);
+      if (nextShowPlayerIdx !== -1) {
+        newState.currentPlayerIndex = nextShowPlayerIdx;
+      }
     }
   }
 
@@ -2206,29 +2338,27 @@ function checkPhaseTransition(state: GameState): GameState {
       p.chosenClub === null ? { ...p, boardPosition: 0, hasFinishedDay: true } : p
     );
 
-    const playersNeedingClub = playersAtCasa.filter(p => p.chosenClub === null);
+    const tempState = { ...state, players: playersAtCasa };
+    const nextNeedingIndex = getNextClubSelectionPlayerIndex(tempState);
 
-    if (playersNeedingClub.length > 0) {
-      const firstNeedingIndex = playersAtCasa.findIndex(p => p.id === playersNeedingClub[0].id);
+    if (nextNeedingIndex !== -1) {
       return {
-        ...state,
+        ...tempState,
         phase: 'club_selection',
-        players: playersAtCasa,
-        currentPlayerIndex: firstNeedingIndex,
+        currentPlayerIndex: nextNeedingIndex,
         turnActionState: { ...INITIAL_TURN_ACTION_STATE },
         log: [
           ...state.log,
           '─── Todos encerraram as ações na cidade! ───',
-          `Fase de Escolha de Clubes: ${playersNeedingClub[0].name} escolhe em qual clube tocar esta noite.`,
+          `Fase de Escolha de Clubes: ${playersAtCasa[nextNeedingIndex].name} escolhe em qual clube tocar esta noite (ordem da rodada).`,
         ],
       };
     }
   }
 
   if (state.phase === 'club_selection') {
-    const playersNeedingClub = state.players.filter(p => p.chosenClub === null);
-    if (playersNeedingClub.length > 0) {
-      const nextNeedingIndex = state.players.findIndex(p => p.id === playersNeedingClub[0].id);
+    const nextNeedingIndex = getNextClubSelectionPlayerIndex(state);
+    if (nextNeedingIndex !== -1) {
       return {
         ...state,
         currentPlayerIndex: nextNeedingIndex,
@@ -2240,9 +2370,9 @@ function checkPhaseTransition(state: GameState): GameState {
     }
   }
 
-  const playersWithClub = state.players.filter(p => p.chosenClub !== null);
+  const presentationOrder = getNightPresentationOrder(state.players);
 
-  if (playersWithClub.length === 0) {
+  if (presentationOrder.length === 0) {
     return startNewRound({
       ...state,
       phase: 'night',
@@ -2250,18 +2380,22 @@ function checkPhaseTransition(state: GameState): GameState {
     });
   }
 
-  const firstShowPlayerIndex = state.players.findIndex(p => p.id === playersWithClub[0].id);
+  const firstShowPlayerId = presentationOrder[0];
+  const firstShowPlayerIndex = state.players.findIndex(p => p.id === firstShowPlayerId);
+  const firstPlayer = state.players[firstShowPlayerIndex];
+  const firstClub = CLUBS.find(c => c.id === firstPlayer.chosenClub);
 
   return {
     ...state,
     phase: 'night',
+    nightPresentationOrder: presentationOrder,
     currentPlayerIndex: firstShowPlayerIndex,
     nightPresentationPlayerIndex: 0,
     turnActionState: { ...INITIAL_TURN_ACTION_STATE },
     log: [
       ...state.log,
       '─── FASE DA NOITE: Apresentações nos Clubes! ───',
-      `Primeiro show: ${playersWithClub[0].name} no clube ${CLUBS.find(c => c.id === playersWithClub[0].chosenClub)?.name}.`,
+      `Primeiro show: ${firstPlayer.name} no clube ${firstClub?.name} (Ordem: ${presentationOrder.map(id => state.players.find(p => p.id === id)?.name).join(' ➔ ')}).`,
     ],
   };
 }
@@ -2270,18 +2404,54 @@ export function startNewRound(state: GameState): GameState {
   const prevRound = state.round;
   const newRound = state.round + 1;
 
-  if (newRound > state.maxRounds) {
-    return endGame(state);
+  // ─── EFEITO DE FIM DE RODADA: Evento 07 (Acertando o Aluguel) ───
+  let stateForEndOrNew = state;
+  const isRentEvent = state.currentEvent?.effectType === 'pay_renown_half_coins' || state.currentEvent?.id === 'evento_07';
+  if (isRentEvent) {
+    const rentLogs: string[] = [];
+    const updatedPlayersWithRent = state.players.map(p => {
+      const rentDue = Math.ceil(p.renown / 2);
+      if (p.coins >= rentDue) {
+        rentLogs.push(`🏠 ${p.name} pagou ${rentDue} moedas de Aluguel (metade do renome ${p.renown} arredondado para cima).`);
+        return {
+          ...p,
+          coins: p.coins - rentDue,
+        };
+      } else {
+        const paidCoins = p.coins;
+        const missing = rentDue - paidCoins;
+        rentLogs.push(`🏠 ${p.name} não tinha moedas suficientes: pagou ${paidCoins} moedas e perdeu ${missing} Pontos de Vitória de Aluguel!`);
+        return {
+          ...p,
+          coins: 0,
+          score: Math.max(0, p.score - missing),
+        };
+      }
+    });
+
+    stateForEndOrNew = {
+      ...state,
+      players: updatedPlayersWithRent,
+      log: [
+        ...state.log,
+        '─── Evento: Acertando o Aluguel (Fim da Rodada) ───',
+        ...rentLogs,
+      ],
+    };
   }
 
-  const eventId = state.eventsByRound[newRound];
+  if (newRound > stateForEndOrNew.maxRounds) {
+    return endGame(stateForEndOrNew);
+  }
+
+  const eventId = stateForEndOrNew.eventsByRound[newRound];
   const currentEvent = eventId ? ALL_EVENTS.find(e => e.id === eventId) ?? null : null;
   const isInvertArrowsEvent = currentEvent?.effectType === 'invert_arrow_direction';
   const startPosition = isInvertArrowsEvent ? 6 : 0;
 
   const inspirationGainLogs: string[] = [];
 
-  const updatedPlayers = state.players.map(p => {
+  const updatedPlayers = stateForEndOrNew.players.map(p => {
     const hasRoadie = p.hasRoadie || p.resources.some(r => r.id === 'recurso_04' || r.effectType === 'die_starts_at_6');
     const hasColecao = p.resources.some(r => r.id === 'recurso_02' || r.effectType === 'inspiration_each_round');
     const hasSalaEnsaio = p.maxMusicians >= 4 || p.resources.some(r => r.id === 'recurso_09' || r.effectType === 'musician_hand_size_4');
@@ -2301,7 +2471,9 @@ export function startNewRound(state: GameState): GameState {
       maxMusicians: hasSalaEnsaio ? 4 : (p.maxMusicians || 3),
       hasFinishedDay: false,
       chosenClub: null,
+      chosenClubOrder: undefined,
       hasUsedBicicletaThisRound: false,
+      hasUsedStudioRecordThisRound: false,
     };
   });
 
@@ -2309,7 +2481,7 @@ export function startNewRound(state: GameState): GameState {
     ? 'Evento Vias Interditadas: Todos os jogadores iniciam no Parque (6) com as setas invertidas!'
     : 'Todos os jogadores retornam à Casa com seus dados reiniciados (5 tempos).';
 
-  const startingPlayerIndex = (newRound - 1) % state.players.length;
+  const startingPlayerIndex = (newRound - 1) % stateForEndOrNew.players.length;
 
   // ─── CLEANUP PHASE (FIM DA RODADA ANTERIOR) ──────────────────────────────────
   let updatedConservatorioCubes = [...state.conservatorioCubes];
@@ -2420,6 +2592,8 @@ export function startNewRound(state: GameState): GameState {
     mainBag: updatedMainBag,
     currentEvent,
     turnActionState: { ...INITIAL_TURN_ACTION_STATE },
+    clubSelectionCounter: 0,
+    nightPresentationOrder: undefined,
     nightPresentationPlayerIndex: 0,
     log: [
       ...state.log,
@@ -2729,6 +2903,48 @@ export function applySponsorshipChoice(
     pendingCubeChoice: pendingSponsorshipCubeChoice || state.pendingCubeChoice || null,
     log: [...state.log, logText],
   };
+}
+
+/**
+ * Evento 02: Escolhas Estéticas — Permite a um jogador eliminar 1 cubo não branco de seu saco.
+ */
+export function applyRemoveNonWhiteCubeChoice(
+  state: GameState,
+  playerIndex: number,
+  chosenColor?: NoteColor
+): GameState {
+  const player = state.players[playerIndex];
+  if (!player) return state;
+
+  let updatedBag = [...player.bag];
+  let logText = '';
+
+  if (chosenColor && chosenColor !== 'white') {
+    const idx = updatedBag.indexOf(chosenColor);
+    if (idx !== -1) {
+      updatedBag.splice(idx, 1);
+      logText = `🎨 ${player.name} eliminou 1 cubo ${chosenColor} do seu saco (Evento: Escolhas Estéticas).`;
+    } else {
+      logText = `🎨 ${player.name} optou por não eliminar nenhum cubo do saco (Evento: Escolhas Estéticas).`;
+    }
+  } else {
+    logText = `🎨 ${player.name} optou por não eliminar nenhum cubo do saco (Evento: Escolhas Estéticas).`;
+  }
+
+  const updatedPlayers = state.players.map((p, i) =>
+    i === playerIndex ? { ...p, bag: updatedBag } : p
+  );
+
+  const newState: GameState = {
+    ...state,
+    players: updatedPlayers,
+    log: [
+      ...state.log,
+      logText,
+    ],
+  };
+
+  return checkPlayerObjectives(newState);
 }
 
 /**
@@ -3047,9 +3263,13 @@ export const GameEngine = {
   performLojasFinishShopping,
   performParqueAction,
   goToClub,
-  performNightGig,
+  performNightPresentation,
+  performNightGig: performNightPresentation,
+  getNightPresentationOrder,
+  getNextClubSelectionPlayerIndex,
   claimClubReward,
   applySponsorshipChoice,
+  applyRemoveNonWhiteCubeChoice,
   resolvePendingCubeChoice,
   checkPlayerObjectives,
   resolvePendingStyleChoice,

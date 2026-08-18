@@ -120,6 +120,17 @@ export function simulateSingleGame(gameNumber: number): GameStats {
       });
     }
 
+    // Se o evento for Escolhas Estéticas, resolve eliminação de cubo
+    if (state.currentEvent?.id === 'evento_02' || state.currentEvent?.effectType === 'remove_nonwhite_cube') {
+      state.players.forEach((p, pIdx) => {
+        const nonWhite = p.bag.filter(c => c !== 'white');
+        const colorCounts: Record<string, number> = {};
+        nonWhite.forEach(c => { colorCounts[c] = (colorCounts[c] || 0) + 1; });
+        const surplusColor = Object.entries(colorCounts).find(([, count]) => count >= 2)?.[0] as import('../types/cards').NoteColor | undefined;
+        state = GameEngine.applyRemoveNonWhiteCubeChoice(state, pIdx, surplusColor);
+      });
+    }
+
     // ─── FASE DE DIA: Ações dos Jogadores ───────────────────
     let safetyTurns = 0;
     while (state.phase === 'day' && safetyTurns < 100) {

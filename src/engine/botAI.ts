@@ -432,7 +432,7 @@ export function computeBotDayAction(state: GameState, botIndex: number): BotDayD
 
   // Avalia todos os 6 locais possíveis no mapa
   for (let loc = 1; loc <= 6; loc++) {
-    const moveInfo = GameEngine.calculateMovement(bot, loc, state.players, isInvert, state.neutralDie);
+    const moveInfo = GameEngine.calculateMovement(bot, loc, state.players, isInvert, state.neutralDie, state.currentEvent);
     if (!moveInfo.isReachable) continue;
 
     const timeCost = Math.max(1, moveInfo.timeCost);
@@ -464,12 +464,18 @@ export function computeBotDayAction(state: GameState, botIndex: number): BotDayD
     }
 
     // ── Local 2: GRAVADORA ──
-    if (loc === 2 && bot.compositions.length > 0) {
-      const comp = [...bot.compositions].sort((a, b) => b.level - a.level)[0];
+    const isStudioEvent = state.currentEvent?.effectType === 'gravadora_skill_level_record' || state.currentEvent?.id === 'evento_06';
+    const canStudioRecord = isStudioEvent && !bot.hasUsedStudioRecordThisRound && bot.skill >= 2;
+
+    if (loc === 2 && (bot.compositions.length > 0 || canStudioRecord)) {
+      const comp = bot.compositions.length > 0
+        ? [...bot.compositions].sort((a, b) => b.level - a.level)[0]
+        : null;
       const recordingCost = moveInfo.isForward ? 3 : 4;
       const totalGravadoraCost = recordingCost + fee;
       if (bot.coins >= totalGravadoraCost) {
-        let discGain = comp.level * 2.5 + (moveInfo.isForward ? 1.5 : 0);
+        const discLevel = comp ? comp.level : bot.skill;
+        let discGain = discLevel * 2.5 + (moveInfo.isForward ? 1.5 : 0);
         discGain += evaluateObjectiveSynergy(bot, 'record_disc');
         const rate = discGain / timeCost;
         if (rate > bestScoreRate) {
@@ -479,7 +485,7 @@ export function computeBotDayAction(state: GameState, botIndex: number): BotDayD
             targetLocation: 2,
             actionDetails: {
               type: 'record_disc',
-              compositionId: comp.id,
+              compositionId: comp ? comp.id : 'studio_record',
             },
           };
         }
@@ -634,14 +640,50 @@ export function computeBotDayAction(state: GameState, botIndex: number): BotDayD
     }
   }
 
-  // Se nenhum local do tabuleiro foi selecionado ou alcançável (ex: no Parque com 1 de tempo),
-  // e o bot ainda está no tabuleiro com tempo >= 1, ele DEVE ir para um clube!
-  if (bestDecision.actionType === 'pass' && bot.boardPosition !== 0 && bot.timeMarker >= 1) {
-    const bestClub = botChooseBestClub(state, botIndex);
-    return {
-      actionType: 'go_to_club',
-      actionDetails: { type: 'club', clubId: bestClub },
-    };
+  // Se nenhum local do tabuleiro teve utilidade positiva ou alcançável com os critérios normais,
+  // e o bot ainda possui tempo >= 1, ele escolhe uma ação segura ou vai a um clube
+  if (bestDecision.actionType === 'pass' && bot.timeMarker >= 1) {
+    const isStartPos = bot.boardPosition === (isInvert ? 6 : 0);
+    if (!isStartPos) {
+      const bestClub = botChooseBestClub(state, botIndex);
+      return {
+        actionType: 'go_to_club',
+        actionDetails: { type: 'club', clubId: bestClub },
+      };
+    } else {
+      // Se está na posição inicial e precisa agir, tenta Conservatório, Rádio ou Parque
+      for (const fallbackLoc of [3, 1, 6]) {
+        if (fallbackLoc === bot.boardPosition) continue;
+        const moveInfo = GameEngine.calculateMovement(bot, fallbackLoc, state.players, isInvert, state.neutralDie, state.currentEvent);
+        if (moveInfo.isReachable) {
+          if (fallbackLoc === 3) {
+            return {
+              actionType: 'location_action',
+              targetLocation: 3,
+              actionDetails: { type: 'conservatorio_skill', cubeIndex: 0 },
+            };
+          } else if (fallbackLoc === 1) {
+            return {
+              actionType: 'location_action',
+              targetLocation: 1,
+              actionDetails: { type: 'radio', option: 'publicity' },
+            };
+          } else if (fallbackLoc === 6) {
+            return {
+              actionType: 'location_action',
+              targetLocation: 6,
+              actionDetails: { type: 'parque' },
+            };
+          }
+        }
+      }
+
+      const bestClub = botChooseBestClub(state, botIndex);
+      return {
+        actionType: 'go_to_club',
+        actionDetails: { type: 'club', clubId: bestClub },
+      };
+    }
   }
 
   return bestDecision;
@@ -1045,34 +1087,29 @@ export function processBotStep(state: GameState): GameState {
             if (result.success) {
               return result.newState;
             } else {
-              console.error(`[BOT ACTION ERROR] ${player.name} falhou ao tentar executar "${details.type}" no local ${loc}: ${result.message}`, { details, player });
-              return {
-                ...state,
-                log: [
-                  ...state.log,
-                  `⚠️ [ERRO DO BOT] ${player.name} tentou ${details.type} no local ${loc}, mas a ação falhou: "${result.message}".`,
-                ],
-              };
+              // Fallback seguro em caso de ação não completada
+              if (!player.hasFinishedDay && player.chosenClub === null) {
+                const bestClub = botChooseBestClub(state, currentIdx);
+                const clubRes = GameEngine.goToClub(state, bestClub);
+                if (clubRes.success) return clubRes.newState;
+              }
+              return GameEngine.passTurn(state);
             }
           }
         }
 
-        // Se o bot não encontrou ação válida mas ainda tem tempo e não agiu, reporta o erro
+        // Se o bot não encontrou ação válida mas ainda tem tempo e não agiu, envia para um clube ou passa
         if (!state.turnActionState.hasActedThisTurn && !player.hasFinishedDay && player.timeMarker >= 1) {
-          console.error(`[BOT DECISION ERROR] ${player.name} tem tempo (${player.timeMarker}) mas não tomou uma ação válida!`, { decision, player });
-          return {
-            ...state,
-            log: [
-              ...state.log,
-              `⚠️ [ERRO DO BOT] ${player.name} possui ${player.timeMarker} de tempo mas nenhuma ação válida foi selecionada!`,
-            ],
-          };
-        }
-
-        // Passa o turno apenas se já agiu legalmente neste turno
-        if (state.turnActionState.hasActedThisTurn || player.hasFinishedDay) {
+          if (player.chosenClub === null) {
+            const bestClub = botChooseBestClub(state, currentIdx);
+            const clubRes = GameEngine.goToClub(state, bestClub);
+            if (clubRes.success) return clubRes.newState;
+          }
           return GameEngine.passTurn(state);
         }
+
+        // Passa o turno
+        return GameEngine.passTurn(state);
       }
     }
 

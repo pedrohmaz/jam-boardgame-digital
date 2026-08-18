@@ -75,10 +75,12 @@ export interface PlayerState {
   totalDiscsRecorded?: number;      // Total histórico de discos gravados (não diminui ao vender/descartar)
   hasPublicityToken: boolean;       // Ficha de divulgação da Rádio (+30 público)
   hasUsedBicicletaThisRound?: boolean; // Se já utilizou a Bicicleta (recurso 14) nesta rodada (limite 1x/rodada)
+  hasUsedStudioRecordThisRound?: boolean; // Se já utilizou a gravação do evento Trabalho no Estúdio nesta rodada (limite 1x/rodada)
 
   // Estado do Dia / Noite
   hasFinishedDay: boolean;   // true se foi para um clube ou esgotou tempo
   chosenClub: ClubId | null; // Clube escolhido para tocar na fase da noite
+  chosenClubOrder?: number;  // Ordem sequencial em que o jogador foi/escolheu este clube
   gigs: GigRecord[];
 }
 
@@ -149,7 +151,9 @@ export interface GameState {
   // Estado do turno ativo
   turnActionState: TurnActionState;
 
-  // Fila de apresentações da noite
+  // Ordem e fila de apresentações da noite
+  clubSelectionCounter?: number;
+  nightPresentationOrder?: string[];
   nightPresentationPlayerIndex: number;
 
   // Log de jogo

@@ -13,6 +13,7 @@ import PlayerMat from './player/PlayerMat';
 import PresentationModal from './modals/PresentationModal';
 import EventAnnouncementModal from './modals/EventAnnouncementModal';
 import SponsorshipModal from './modals/SponsorshipModal';
+import EscolhasEsteticasModal from './modals/EscolhasEsteticasModal';
 import InitialMusicianDraftModal from './modals/InitialMusicianDraftModal';
 import CubeSelectionModal from './modals/CubeSelectionModal';
 import StyleSelectionModal from './modals/StyleSelectionModal';
@@ -372,10 +373,20 @@ export default function GameBoard({ gameState, onStateUpdate, onResetGame }: Gam
         />
       )}
 
-      {/* ── MODAL DE ANÚNCIO DE NOVO EVENTO OU PATROCÍNIO (RODADAS 2 A 6) ──────── */}
+      {/* ── MODAL DE ANÚNCIO DE NOVO EVENTO, PATROCÍNIO OU ESCOLHAS ESTÉTICAS (RODADAS 2 A 6) ──────── */}
       {shouldShowEventModal && gameState.currentEvent && (
         gameState.currentEvent.id === 'evento_04' || gameState.currentEvent.effectType === 'sponsorship_choice' ? (
           <SponsorshipModal
+            event={gameState.currentEvent}
+            round={gameState.round}
+            gameState={gameState}
+            onComplete={(newState) => {
+              setLastAnnouncedEventRound(gameState.round);
+              onStateUpdate(newState);
+            }}
+          />
+        ) : gameState.currentEvent.id === 'evento_02' || gameState.currentEvent.effectType === 'remove_nonwhite_cube' ? (
+          <EscolhasEsteticasModal
             event={gameState.currentEvent}
             round={gameState.round}
             gameState={gameState}
