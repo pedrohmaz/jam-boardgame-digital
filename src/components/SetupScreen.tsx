@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { PlayerSetup } from '../App';
+import RulesModal from './modals/RulesModal';
 
 interface SetupScreenProps {
   onStart: (setup: PlayerSetup[]) => void;
@@ -26,6 +27,7 @@ const DEFAULT_NAMES = ['Jogador 1', 'Jogador 2', 'Jogador 3', 'Jogador 4'];
 
 export default function SetupScreen({ onStart, playerColors }: SetupScreenProps) {
   const [playerCount, setPlayerCount] = useState(2);
+  const [showRules, setShowRules] = useState(false);
   const [players, setPlayers] = useState<PlayerSetup[]>([
     { name: 'Jogador 1', color: 'orange', isBot: false },
     { name: 'Jogador 2', color: 'pink', isBot: false },
@@ -133,19 +135,46 @@ export default function SetupScreen({ onStart, playerColors }: SetupScreenProps)
         </div>
       </div>
 
-      {/* Start button */}
-      <button
-        id="start-game-btn"
-        className="btn-primary btn-lg start-btn"
-        type="button"
-        onClick={handleStart}
-      >
-        🎷 Começar a Tocar!
-      </button>
+      {/* Action buttons */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '440px' }}>
+        <button
+          id="start-game-btn"
+          className="btn-primary btn-lg start-btn"
+          type="button"
+          onClick={handleStart}
+          style={{ width: '100%', margin: 0 }}
+        >
+          🎷 Começar a Tocar!
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowRules(true)}
+          style={{
+            background: 'rgba(243, 195, 67, 0.12)',
+            border: '1px solid rgba(243, 195, 67, 0.35)',
+            borderRadius: '10px',
+            padding: '10px 16px',
+            color: '#f3c343',
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'all 0.2s',
+          }}
+        >
+          <span>📖 Como Jogar / Manual de Regras</span>
+        </button>
+      </div>
 
       <p className="setup-footer">
         Baseado no jogo de tabuleiro JAM — Versão Digital
       </p>
+
+      <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
     </div>
   );
 }

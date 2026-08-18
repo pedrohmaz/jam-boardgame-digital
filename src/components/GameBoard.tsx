@@ -20,6 +20,7 @@ import StyleSelectionModal from './modals/StyleSelectionModal';
 import FinalScoreModal from './modals/FinalScoreModal';
 import BicicletaDecisionModal from './modals/BicicletaDecisionModal';
 import LuthierModal from './modals/LuthierModal';
+import RulesModal from './modals/RulesModal';
 import CardHoverPreview from './common/CardHoverPreview';
 import { CoinIcon, PointsIcon } from './common/GameIcons';
 
@@ -32,6 +33,7 @@ interface GameBoardProps {
 export default function GameBoard({ gameState, onStateUpdate, onResetGame }: GameBoardProps) {
   const [showManualGig, setShowManualGig] = useState(false);
   const [showScorePreview, setShowScorePreview] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
   const [activePlayerTab, setActivePlayerTab] = useState(gameState.currentPlayerIndex);
   const [lastAnnouncedEventRound, setLastAnnouncedEventRound] = useState<number | null>(null);
 
@@ -233,31 +235,59 @@ export default function GameBoard({ gameState, onStateUpdate, onResetGame }: Gam
           ))}
         </div>
 
-        {/* ── BOTÃO DE PREVIEW DA PONTUAÇÃO FINAL ── */}
-        <button
-          type="button"
-          id="score-preview-btn"
-          onClick={() => setShowScorePreview(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'linear-gradient(135deg, rgba(243,195,67,0.18), rgba(0,0,0,0.5))',
-            border: '1px solid rgba(243,195,67,0.45)',
-            borderRadius: 20,
-            padding: '4px 12px',
-            color: '#f3c343',
-            fontSize: 11.5,
-            fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-            transition: 'all 0.15s ease',
-            whiteSpace: 'nowrap',
-          }}
-          title="Ver projeção completa da pontuação final em tempo real"
-        >
-          <span>📊 Placar Final</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* ── BOTÃO DE REGRAS / MANUAL ── */}
+          <button
+            type="button"
+            id="rules-manual-btn"
+            onClick={() => setShowRulesModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'linear-gradient(135deg, rgba(201,146,43,0.18), rgba(0,0,0,0.5))',
+              border: '1px solid rgba(201,146,43,0.45)',
+              borderRadius: 20,
+              padding: '4px 12px',
+              color: '#f3c343',
+              fontSize: 11.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+            }}
+            title="Abrir o Manual de Regras Oficial do JAM"
+          >
+            <span>📖 Regras</span>
+          </button>
+
+          {/* ── BOTÃO DE PREVIEW DA PONTUAÇÃO FINAL ── */}
+          <button
+            type="button"
+            id="score-preview-btn"
+            onClick={() => setShowScorePreview(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'linear-gradient(135deg, rgba(243,195,67,0.18), rgba(0,0,0,0.5))',
+              border: '1px solid rgba(243,195,67,0.45)',
+              borderRadius: 20,
+              padding: '4px 12px',
+              color: '#f3c343',
+              fontSize: 11.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+            }}
+            title="Ver projeção completa da pontuação final em tempo real"
+          >
+            <span>📊 Placar Final</span>
+          </button>
+        </div>
       </header>
 
       {/* ── MAIN LAYOUT ─────────────────────────────────────────── */}
@@ -403,6 +433,12 @@ export default function GameBoard({ gameState, onStateUpdate, onResetGame }: Gam
           />
         )
       )}
+
+      {/* ── MODAL DE MANUAL DE REGRAS ────────────────────────────── */}
+      <RulesModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+      />
 
       {/* ── MODAL DE PREVIEW DA PONTUAÇÃO FINAL ───────────────────── */}
       {showScorePreview && (
